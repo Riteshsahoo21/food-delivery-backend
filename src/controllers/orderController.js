@@ -2,6 +2,9 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Restaurant = require('../models/Restaurant');
+const DeliveryPartner = require('../models/DeliveryPartner');
+const User = require('../models/User');
+const Review = require('../models/Review');
 const Coupon = require('../models/Coupon');
 const razorpay = require('../config/razorpay');
 
