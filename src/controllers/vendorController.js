@@ -293,11 +293,15 @@ exports.getVendorOrders = async (req, res) => {
     let restaurant = null;
     if (req.user && req.user._id) {
       restaurant = await Restaurant.findOne({ owner: req.user._id });
-      if (!restaurant) {
-        return res.json({ success: true, count: 0, data: [] });
+    }
+    if (!restaurant) {
+      const latestOrder = await Order.findOne().sort({ createdAt: -1 });
+      if (latestOrder && latestOrder.restaurant) {
+        restaurant = await Restaurant.findById(latestOrder.restaurant);
       }
-    } else {
-      restaurant = await Restaurant.findOne();
+      if (!restaurant) {
+        restaurant = await Restaurant.findOne();
+      }
     }
 
     const orders = await Order.find(restaurant ? { restaurant: restaurant._id } : {})

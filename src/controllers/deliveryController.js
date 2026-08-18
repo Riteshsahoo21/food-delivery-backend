@@ -210,11 +210,14 @@ exports.updateDeliveryStep = async (req, res) => {
 
     const io = req.app.get('io');
     if (io) {
-      io.to(`order_${order._id}`).emit('order_status_changed', {
+      const payload = {
         orderId: order._id,
+        orderNumber: order.orderNumber,
         status: order.orderStatus,
         deliveryPartner: order.deliveryPartner,
-      });
+      };
+      io.to(`order_${order._id}`).emit('order_status_changed', payload);
+      io.emit('order_status_changed', payload);
     }
 
     res.json({
