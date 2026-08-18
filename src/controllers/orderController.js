@@ -422,27 +422,34 @@ exports.rateOrder = async (req, res) => {
       customerAvatar,
       restaurant: order.restaurant,
       deliveryPartner: order.deliveryPartner,
-      restaurantRating: Number(restaurantRating) || 5,
+      restaurantRating: restaurantRating ? Number(restaurantRating) : undefined,
       restaurantReview: restaurantReview || '',
       restaurantTags: Array.isArray(restaurantTags) ? restaurantTags : [],
-      deliveryRating: deliveryRating ? Number(deliveryRating) : null,
+      deliveryRating: deliveryRating ? Number(deliveryRating) : undefined,
       deliveryReview: deliveryReview || '',
       deliveryTags: Array.isArray(deliveryTags) ? deliveryTags : [],
-      driverTip: Number(driverTip) || 0,
+      driverTip: driverTip !== undefined ? Number(driverTip) : 0,
       itemRatings: Array.isArray(itemRatings) ? itemRatings : [],
     });
     await reviewDoc.save();
 
-    // 2. Persist review summary in Order document
+    // 2. Persist review summary in Order document with merge support
+    const existing = order.review || {};
     order.review = {
-      restaurantRating: Number(restaurantRating) || 5,
-      restaurantReview: restaurantReview || '',
-      restaurantTags: Array.isArray(restaurantTags) ? restaurantTags : [],
-      deliveryRating: deliveryRating ? Number(deliveryRating) : null,
-      deliveryReview: deliveryReview || '',
-      deliveryTags: Array.isArray(deliveryTags) ? deliveryTags : [],
-      driverTip: Number(driverTip) || 0,
-      itemRatings: Array.isArray(itemRatings) ? itemRatings : [],
+      restaurantRating: restaurantRating !== undefined ? Number(restaurantRating) : (existing.restaurantRating || 5),
+      restaurantReview: restaurantReview !== undefined ? restaurantReview : (existing.restaurantReview || ''),
+      restaurantTags: Array.isArray(restaurantTags) && restaurantTags.length > 0 ? restaurantTags : (existing.restaurantTags || []),
+      isRestaurantRated: restaurantRating !== undefined ? true : Boolean(existing.isRestaurantRated),
+
+      itemRatings: Array.isArray(itemRatings) && itemRatings.length > 0 ? itemRatings : (existing.itemRatings || []),
+      areItemsRated: Array.isArray(itemRatings) && itemRatings.length > 0 ? true : Boolean(existing.areItemsRated),
+
+      deliveryRating: deliveryRating !== undefined ? Number(deliveryRating) : (existing.deliveryRating || 5),
+      deliveryReview: deliveryReview !== undefined ? deliveryReview : (existing.deliveryReview || ''),
+      deliveryTags: Array.isArray(deliveryTags) && deliveryTags.length > 0 ? deliveryTags : (existing.deliveryTags || []),
+      driverTip: driverTip !== undefined ? Number(driverTip) : (existing.driverTip || 0),
+      isDeliveryRated: deliveryRating !== undefined ? true : Boolean(existing.isDeliveryRated),
+
       isRated: true,
       ratedAt: new Date(),
     };
