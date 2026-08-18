@@ -332,6 +332,9 @@ exports.updateVendorOrderStatus = async (req, res) => {
     }
 
     order.orderStatus = status;
+    if (status === 'DELIVERED') {
+      order.paymentStatus = 'PAID';
+    }
     order.timeline.push({
       status,
       timestamp: new Date(),
