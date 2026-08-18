@@ -8,6 +8,7 @@ const {
   updateOrderStatus,
   getOrderChat,
   sendOrderChatMessage,
+  rateOrder,
 } = require('../controllers/orderController');
 const { protect, optionalProtect } = require('../middlewares/auth');
 
@@ -16,6 +17,7 @@ router.post('/:id/verify-payment', protect, verifyPayment);
 router.get('/my-orders', optionalProtect, getMyOrders);
 router.get('/:id/chat', optionalProtect, getOrderChat);
 router.post('/:id/chat', optionalProtect, sendOrderChatMessage);
+router.post('/:id/rate', optionalProtect, rateOrder);
 router.get('/:id', getOrderById);
 router.patch('/:id/status', protect, updateOrderStatus);
 

@@ -105,6 +105,25 @@ const orderSchema = new mongoose.Schema(
       },
     ],
     cancellationReason: String,
+    review: {
+      restaurantRating: { type: Number, min: 1, max: 5 },
+      restaurantReview: { type: String, default: '' },
+      restaurantTags: [String],
+      deliveryRating: { type: Number, min: 1, max: 5 },
+      deliveryReview: { type: String, default: '' },
+      deliveryTags: [String],
+      driverTip: { type: Number, default: 0 },
+      itemRatings: [
+        {
+          menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: 'MenuItem' },
+          name: String,
+          rating: { type: Number, min: 1, max: 5 },
+          review: String,
+        },
+      ],
+      isRated: { type: Boolean, default: false },
+      ratedAt: Date,
+    },
   },
   { timestamps: true }
 );

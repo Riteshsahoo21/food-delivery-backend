@@ -375,3 +375,125 @@ exports.sendOrderChatMessage = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// @desc    Submit ratings and reviews for Restaurant, Food Items & Delivery Partner
+// @route   POST /api/orders/:id/rate
+// @access  Public / Private (Customer)
+exports.rateOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      restaurantRating,
+      restaurantReview,
+      restaurantTags,
+      itemRatings,
+      deliveryRating,
+      deliveryReview,
+      deliveryTags,
+      driverTip,
+    } = req.body;
+
+    const mongoose = require('mongoose');
+    let order = null;
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      order = await Order.findById(id);
+    }
+    if (!order) {
+      order = await Order.findOne({ orderNumber: id });
+    }
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const customerId = req.user ? req.user._id : order.customer;
+    const customerName = req.user ? req.user.name : (order.deliveryAddress?.contactName || 'Valued Foodie');
+    const customerAvatar = req.user?.avatar || '';
+
+    // 1. Create and Save Review document
+    const Review = require('../models/Review');
+    const reviewDoc = new Review({
+      order: order._id,
+      customer: customerId,
+      customerName,
+      customerAvatar,
+      restaurant: order.restaurant,
+      deliveryPartner: order.deliveryPartner,
+      restaurantRating: Number(restaurantRating) || 5,
+      restaurantReview: restaurantReview || '',
+      restaurantTags: Array.isArray(restaurantTags) ? restaurantTags : [],
+      deliveryRating: deliveryRating ? Number(deliveryRating) : null,
+      deliveryReview: deliveryReview || '',
+      deliveryTags: Array.isArray(deliveryTags) ? deliveryTags : [],
+      driverTip: Number(driverTip) || 0,
+      itemRatings: Array.isArray(itemRatings) ? itemRatings : [],
+    });
+    await reviewDoc.save();
+
+    // 2. Persist review summary in Order document
+    order.review = {
+      restaurantRating: Number(restaurantRating) || 5,
+      restaurantReview: restaurantReview || '',
+      restaurantTags: Array.isArray(restaurantTags) ? restaurantTags : [],
+      deliveryRating: deliveryRating ? Number(deliveryRating) : null,
+      deliveryReview: deliveryReview || '',
+      deliveryTags: Array.isArray(deliveryTags) ? deliveryTags : [],
+      driverTip: Number(driverTip) || 0,
+      itemRatings: Array.isArray(itemRatings) ? itemRatings : [],
+      isRated: true,
+      ratedAt: new Date(),
+    };
+    await order.save();
+
+    // 3. Update Restaurant aggregate rating
+    if (order.restaurant && restaurantRating) {
+      const Restaurant = require('../models/Restaurant');
+      const rest = await Restaurant.findById(order.restaurant);
+      if (rest) {
+        const curCount = parseInt(rest.ratingCount) || 120;
+        const curRating = parseFloat(rest.rating) || 4.7;
+        const newRating = Number(((curRating * curCount + Number(restaurantRating)) / (curCount + 1)).toFixed(1));
+        rest.rating = newRating;
+        rest.ratingCount = `${curCount + 1}+`;
+        await rest.save();
+      }
+    }
+
+    // 4. Update DeliveryPartner aggregate rating
+    if (order.deliveryPartner && deliveryRating) {
+      const DeliveryPartner = require('../models/DeliveryPartner');
+      const partner = await DeliveryPartner.findOne({ user: order.deliveryPartner });
+      if (partner) {
+        const curCount = parseInt(partner.completedOrders) || 40;
+        const curRating = parseFloat(partner.rating) || 4.9;
+        partner.rating = Number(((curRating * curCount + Number(deliveryRating)) / (curCount + 1)).toFixed(1));
+        await partner.save();
+      }
+    }
+
+    // 5. Update MenuItems aggregate ratings
+    if (Array.isArray(itemRatings) && itemRatings.length > 0) {
+      const MenuItem = require('../models/MenuItem');
+      for (const ir of itemRatings) {
+        if (ir.menuItemId && ir.rating) {
+          const item = await MenuItem.findById(ir.menuItemId);
+          if (item) {
+            const count = parseInt(item.ratingCount) || 25;
+            const rating = parseFloat(item.rating) || 4.8;
+            item.rating = Number(((rating * count + Number(ir.rating)) / (count + 1)).toFixed(1));
+            item.ratingCount = count + 1;
+            await item.save();
+          }
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Thank you for your rating & review! Your feedback helps the community.',
+      review: order.review,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
