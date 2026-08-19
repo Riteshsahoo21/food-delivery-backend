@@ -197,11 +197,12 @@ exports.updateDeliveryStep = async (req, res) => {
 
     if (status === 'DELIVERED') {
       order.paymentStatus = 'PAID';
-      // Update driver earnings
+      // Update driver earnings dynamically using optimal 4-pillar calculation
       if (order.deliveryPartner) {
+        const earned = order.driverEarnings?.totalEarnings || 55;
         await DeliveryPartner.findOneAndUpdate(
           { user: order.deliveryPartner },
-          { $inc: { totalDeliveries: 1, todayEarnings: 65, totalEarnings: 65 } }
+          { $inc: { totalDeliveries: 1, todayEarnings: earned, totalEarnings: earned } }
         );
       }
     }

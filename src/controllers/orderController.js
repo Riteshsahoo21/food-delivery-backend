@@ -30,27 +30,62 @@ exports.createOrder = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Restaurant not found' });
     }
 
-    // Compute bill
+    // Compute bill with dynamic packaging and distance-based delivery fee
     let itemTotal = 0;
+    let totalItemCount = 0;
     const formattedItems = items.map((item) => {
       const addonsTotal = (item.addons || []).reduce((sum, a) => sum + a.price, 0);
       const unitPrice = (item.price || 0) + addonsTotal;
-      itemTotal += unitPrice * (item.quantity || 1);
+      const qty = item.quantity || 1;
+      itemTotal += unitPrice * qty;
+      totalItemCount += qty;
 
       return {
         menuItem: item.id || item.menuItem,
         name: item.name,
         price: item.price,
         unitPrice,
-        quantity: item.quantity || 1,
+        quantity: qty,
         isVeg: item.isVeg,
         addons: item.addons || [],
         instructions: item.instructions || '',
       };
     });
 
-    const packagingFee = 25;
-    let deliveryFee = itemTotal >= 500 ? 0 : 29;
+    // 1. Dynamic Packaging Fee: Base ₹15, +₹6 per extra item, capped at ₹35
+    const packagingFee = req.body.packagingFee !== undefined
+      ? Number(req.body.packagingFee)
+      : Math.min(35, Math.max(15, 15 + (totalItemCount - 1) * 6));
+
+    // 2. Dynamic Distance & Delivery Fee
+    let distanceKm = req.body.distanceKm ? Number(req.body.distanceKm) : 2.4;
+    if (deliveryAddress?.lat && deliveryAddress?.lng && (restaurant.lat || restaurant.coordinates?.lat)) {
+      const rLat = Number(restaurant.lat || restaurant.coordinates?.lat);
+      const rLng = Number(restaurant.lng || restaurant.coordinates?.lng);
+      const cLat = Number(deliveryAddress.lat);
+      const cLng = Number(deliveryAddress.lng);
+      if (!isNaN(rLat) && !isNaN(rLng) && !isNaN(cLat) && !isNaN(cLng)) {
+        const R = 6371;
+        const dLat = ((cLat - rLat) * Math.PI) / 180;
+        const dLon = ((cLng - rLng) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((rLat * Math.PI) / 180) * Math.cos((cLat * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const calcDist = Math.round(R * c * 10) / 10;
+        distanceKm = calcDist > 50 ? Math.round(((calcDist % 10) + 1.8) * 10) / 10 : calcDist;
+      }
+    }
+
+    // Free delivery for orders >= ₹499
+    let deliveryFee = 0;
+    if (itemTotal < 499) {
+      deliveryFee = distanceKm <= 3.0 ? 25 : 25 + Math.ceil((distanceKm - 3.0) * 9);
+    }
+    if (req.body.deliveryFee !== undefined && !couponCode) {
+      deliveryFee = Number(req.body.deliveryFee);
+    }
+
     let discount = 0;
 
     // Apply coupon if provided
@@ -69,6 +104,18 @@ exports.createOrder = async (req, res) => {
 
     const taxes = Math.round(itemTotal * 0.05); // 5% GST
     const grandTotal = Math.max(0, itemTotal + packagingFee + deliveryFee + taxes - discount);
+
+    // 3. Optimal 4-Pillar Driver Earnings Engine
+    const driverBasePay = 30; // ₹30 base pickup & drop handover
+    const driverDistancePay = Math.round(distanceKm * 10); // ₹10 per km
+    const driverHeavyBonus = totalItemCount >= 5 ? 15 : 0;
+    const driverEarnings = {
+      basePay: driverBasePay,
+      distancePay: driverDistancePay,
+      heavyOrderBonus: driverHeavyBonus,
+      tip: 0,
+      totalEarnings: driverBasePay + driverDistancePay + driverHeavyBonus,
+    };
 
     const orderNumber = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
 
@@ -106,6 +153,8 @@ exports.createOrder = async (req, res) => {
       itemTotal,
       packagingFee,
       deliveryFee,
+      distanceKm,
+      driverEarnings,
       taxes,
       discount,
       grandTotal,
@@ -459,6 +508,39 @@ exports.rateOrder = async (req, res) => {
       isRated: true,
       ratedAt: new Date(),
     };
+
+    // Update driver earnings with customer tip
+    if (driverTip !== undefined && Number(driverTip) > 0) {
+      const tipAmount = Number(driverTip);
+      const existingTip = Number(existing.driverTip) || 0;
+      const tipDiff = tipAmount - existingTip;
+
+      if (!order.driverEarnings) {
+        order.driverEarnings = {
+          basePay: 30,
+          distancePay: 25,
+          heavyOrderBonus: 0,
+          tip: tipAmount,
+          totalEarnings: 55 + tipAmount,
+        };
+      } else {
+        order.driverEarnings.tip = tipAmount;
+        order.driverEarnings.totalEarnings =
+          (order.driverEarnings.basePay || 30) +
+          (order.driverEarnings.distancePay || 25) +
+          (order.driverEarnings.heavyOrderBonus || 0) +
+          tipAmount;
+      }
+
+      if (tipDiff > 0 && order.deliveryPartner) {
+        const DeliveryPartner = require('../models/DeliveryPartner');
+        await DeliveryPartner.findOneAndUpdate(
+          { user: order.deliveryPartner },
+          { $inc: { todayEarnings: tipDiff, totalEarnings: tipDiff } }
+        );
+      }
+    }
+
     await order.save();
 
     // 3. Update Restaurant aggregate rating
