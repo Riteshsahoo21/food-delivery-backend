@@ -97,15 +97,21 @@ exports.getDeliveryOrders = async (req, res) => {
     // Strictly retain only the single latest active order for driver clarity
     activeOrders = activeOrders.slice(0, 1);
 
-    const pastQuery = userId
-      ? { deliveryPartner: userId, orderStatus: 'DELIVERED' }
-      : { orderStatus: 'DELIVERED' };
+    let pastOrders = userId
+      ? await Order.find({ deliveryPartner: userId, orderStatus: 'DELIVERED' })
+          .populate('restaurant', 'name address coordinates image')
+          .populate('customer', 'name phone email')
+          .sort({ updatedAt: -1 })
+          .limit(10)
+      : [];
 
-    const pastOrders = await Order.find(pastQuery)
-      .populate('restaurant', 'name address coordinates image')
-      .populate('customer', 'name phone email')
-      .sort({ updatedAt: -1 })
-      .limit(1);
+    if (pastOrders.length === 0) {
+      pastOrders = await Order.find({ orderStatus: 'DELIVERED' })
+        .populate('restaurant', 'name address coordinates image')
+        .populate('customer', 'name phone email')
+        .sort({ updatedAt: -1 })
+        .limit(10);
+    }
 
     res.json({
       success: true,
