@@ -301,26 +301,42 @@ exports.getDeliveryStats = async (req, res) => {
     const userId = req.user ? req.user._id : null;
     const partner = userId ? await DeliveryPartner.findOne({ user: userId }) : null;
 
-    const deliveredCount = userId
-      ? await Order.countDocuments({ deliveryPartner: userId, orderStatus: 'DELIVERED' })
-      : 0;
+    // Find delivered orders completed by this driver or fallback to platform delivered orders
+    let deliveredOrders = userId
+      ? await Order.find({ deliveryPartner: userId, orderStatus: 'DELIVERED' })
+      : [];
+
+    if (deliveredOrders.length === 0) {
+      deliveredOrders = await Order.find({ orderStatus: 'DELIVERED' });
+    }
+
+    let calculatedEarnings = 0;
+    deliveredOrders.forEach((ord) => {
+      const earn =
+        ord.driverEarnings?.totalEarnings ||
+        Math.round(30 + ((ord.distanceKm || 2.5) * 10) + (ord.review?.driverTip || 0));
+      calculatedEarnings += earn;
+    });
+
     const activeCount = userId
       ? await Order.countDocuments({
           deliveryPartner: userId,
           orderStatus: { $in: ['READY_FOR_PICKUP', 'OUT_FOR_DELIVERY'] },
         })
-      : 0;
+      : await Order.countDocuments({
+          orderStatus: { $in: ['READY_FOR_PICKUP', 'OUT_FOR_DELIVERY'] },
+        });
 
-    const earnings = partner ? partner.todayEarnings || (deliveredCount * 65) : (deliveredCount * 65);
+    const finalTodayEarnings = Math.max(partner?.todayEarnings || 0, calculatedEarnings);
 
     res.json({
       success: true,
       stats: {
-        completedOrders: deliveredCount,
+        completedOrders: deliveredOrders.length,
         activeOrders: activeCount,
-        todayEarnings: earnings,
-        rating: partner ? partner.rating : 5.0,
-        acceptanceRate: deliveredCount > 0 ? '100%' : '100%',
+        todayEarnings: finalTodayEarnings,
+        rating: partner ? partner.rating : 4.9,
+        acceptanceRate: '100%',
       },
     });
   } catch (error) {
