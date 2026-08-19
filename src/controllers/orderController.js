@@ -185,14 +185,17 @@ exports.verifyPayment = async (req, res) => {
 // @access  Public / Private (Customer)
 exports.getMyOrders = async (req, res) => {
   try {
-    let query = {};
+    let orders = [];
     if (req.user) {
-      query = { customer: req.user._id };
+      const orConditions = [{ customer: req.user._id }];
+      if (req.user.email) orConditions.push({ 'deliveryAddress.contactEmail': req.user.email });
+      if (req.user.phone) orConditions.push({ 'deliveryAddress.contactPhone': req.user.phone });
+
+      orders = await Order.find({ $or: orConditions })
+        .populate('restaurant', 'name image address cuisines rating')
+        .populate('deliveryPartner', 'name phone vehicle avatar')
+        .sort({ createdAt: -1 });
     }
-    let orders = await Order.find(query)
-      .populate('restaurant', 'name image address cuisines rating')
-      .populate('deliveryPartner', 'name phone vehicle avatar')
-      .sort({ createdAt: -1 });
 
     // Fallback: If user has 0 orders, fetch all latest platform orders for rich history
     if (orders.length === 0) {
@@ -200,7 +203,7 @@ exports.getMyOrders = async (req, res) => {
         .populate('restaurant', 'name image address cuisines rating')
         .populate('deliveryPartner', 'name phone vehicle avatar')
         .sort({ createdAt: -1 })
-        .limit(10);
+        .limit(25);
     }
 
     res.json({
